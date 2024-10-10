@@ -23,7 +23,7 @@
       "css/config.css"
     ],
     "required_params": [
-      "key"
+      "openAIToken"
     ]
   },
   "name": {
