@@ -2,11 +2,7 @@
   'use strict';
 
   // プラグイン設定からAPIキーを取得
-  const config = kintone.plugin.app.getConfig(PLUGIN_ID);
-  const openAIToken = config.openAIToken;
-
   async function calculateSentiment(records) {
-    // Filter and process records as before
     const filteredRecords = records.filter(record => record.Status.value !== "完了");
     const processedRecords = filteredRecords.map(record => ({
       id: record.$id.value,
@@ -46,10 +42,7 @@
     };
 
     try {
-      const response = await kintone.plugin.app.proxy(PLUGIN_ID, 'https://api.openai.com/v1/chat/completions', 'POST', {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openAIToken}`
-      }, JSON.stringify(body));
+      const response = await kintone.plugin.app.proxy(PLUGIN_ID, 'https://api.openai.com/v1/chat/completions', 'POST', {}, JSON.stringify(body));
       const parsedResponse = JSON.parse(response[0]);
       console.log(parsedResponse)
       const content = JSON.parse(parsedResponse.choices[0].message.content);
