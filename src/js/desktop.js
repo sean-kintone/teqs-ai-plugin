@@ -5,88 +5,65 @@
   const config = kintone.plugin.app.getConfig(PLUGIN_ID);
   const openAIToken = config.openAIToken;
 
-  function calculateSentiment() {
-    // 現在のレコードを取得
-    const record = kintone.app.record.get().record;
-    console.log('レコード:', record);
+  async function calculateSentiment(records) {
+    // Filter and process records as before
+    const filteredRecords = records.filter(record => record.Status.value !== "完了");
+    const processedRecords = filteredRecords.map(record => ({
+      id: record.$id.value,
+      detail: record.Detail.value,
+      detailsTable: record['対応詳細'].value.map(row => row.value['文字列__複数行__1'].value).join(' ')
+    }));
 
-    // 必要なフィールドの値を取得
-    const dateTime = record['日時'].value;
-    const notes = record['備考'].value;
-    const customerRank = record['顧客ランク'].value;
-
-    // OpenAI用のプロンプトを準備
-    const prompt = `以下の情報に基づいて、次の連絡日を提案してください：
-    前回の連絡日時: ${dateTime}
-    顧客ランク: ${customerRank}（A、B、またはC）
-    備考: ${notes}
-    提案する連絡日は、必ず今日の日付より後の未来の日付にしてください。今日または過去の日付は避けてください。
-    一般的に、高ランクの顧客や有望なリードには定期的に、約2週間ごとに連絡するべきです。
-    特定の問題がない限り、低ランクの顧客や見込みのないリードに時間を費やすべきではありません。
-    "2012-01-11"の形式で次の連絡日のみを回答してください。回答に他の文章を含めないでください。`;
+    const prompt = `以下の顧客サポート記録を分析し、優先度の高い上位3件を選んでください。各記録の重要性、緊急性、潜在的な影響を考慮してください。
+  回答は、以下のJSONオブジェクトの配列形式で提供してください：
+  records: [
+    {
+      "record": {
+        "id": number,
+        "priority": number,
+        "reason": string
+      }
+    },
+    ...
+  ]
+  priorityは1（最高）から3の数値で表してください。reasonは選択した理由を簡潔に説明してください。
+  以下が分析対象の記録です：
+  ${JSON.stringify(processedRecords, null, 2)}`;
 
     const body = {
-      model: "gpt-3.5-turbo",
+      model: "gpt-3.5-turbo-0125",
       messages: [
         {
           role: "system",
-          content: "あなたは顧客情報に基づいて次の連絡日を提案する便利なアシスタントです。"
+          content: "You are a helpful assistant designed to output JSON."
         },
         {
           role: "user",
           content: prompt
         }
-      ]
+      ],
+      response_format: { type: "json_object" }
     };
 
-    kintone.plugin.app.proxy(PLUGIN_ID, 'https://api.openai.com/v1/chat/completions', 'POST', {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${openAIToken}`
-    }, JSON.stringify(body), (body, status, headers) => {
-      // 成功時の処理
-      try {
-        const responseData = JSON.parse(body);
-        const suggestedDate = responseData.choices[0].message.content.trim();
-        console.log('OpenAIの提案:', suggestedDate);
-        updateKintoneRecord(suggestedDate);
-      } catch (error) {
-        console.error('レスポンス処理中にエラーが発生しました:', error);
-        alert('レスポンスの処理中にエラーが発生しました。もう一度お試しください。');
-      }
-    }, (error) => {
-      // エラー時のコールバック
-      console.error('エラーが発生しました:', error);
-      alert('次の連絡日の計算中にエラーが発生しました。もう一度お試しください。');
-    });
+    try {
+      const response = await kintone.plugin.app.proxy(PLUGIN_ID, 'https://api.openai.com/v1/chat/completions', 'POST', {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${openAIToken}`
+      }, JSON.stringify(body));
+      const parsedResponse = JSON.parse(response[0]);
+      console.log(parsedResponse)
+      const content = JSON.parse(parsedResponse.choices[0].message.content);
+      console.log(content)
+      return content.records;
+
+    } catch (error) {
+      console.error('Error calling OpenAI API:', error);
+      return [];
+    }
   }
 
-  function updateKintoneRecord(suggestedDate) {
-    const app = kintone.app.getId();
-    const record = kintone.app.record.getId();
-
-    const params = {
-      app: app,
-      id: record,
-      record: {
-        '日付': {
-          value: suggestedDate
-        }
-      }
-    };
-
-    kintone.api(kintone.api.url('/k/v1/record', true), 'PUT', params, function(resp) {
-      console.log('レコードが正常に更新されました', resp);
-      alert('次の連絡日が更新されました: ' + suggestedDate);
-      // 更新されたレコードを表示するためにページをリロード
-      location.reload();
-    }, function(error) {
-      console.error('レコード更新中にエラーが発生しました:', error);
-      alert('レコードの更新に失敗しました。もう一度お試しください。');
-    });
-  }
-
-  kintone.events.on('app.record.detail.show', (event) => {
-    const headerSpace = kintone.app.record.getHeaderMenuSpaceElement();
+  kintone.events.on('app.record.index.show', (event) => {
+    const headerSpace = kintone.app.getHeaderMenuSpaceElement();
     if (headerSpace === null) {
       throw new Error('このページでヘッダー要素が利用できません。');
     }
@@ -95,11 +72,113 @@
     button.id = 'auto-priority-button';
     button.textContent = '自動優先度計算';
     button.style.marginTop = '10px';
-    button.addEventListener('click', calculateSentiment);
-
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      button.textContent = '計算中...';
+      try {
+        const priorityRecords = await calculateSentiment(event.records);
+        console.log('Prioritized records:', priorityRecords);
+        if (priorityRecords.length > 0) {
+          displayPriorityRecords(priorityRecords);
+        } else {
+          alert('優先度の計算結果が得られませんでした。ログを確認してください。');
+        }
+      } catch (error) {
+        console.error('Error calculating priorities:', error);
+        alert('優先度の計算中にエラーが発生しました。コンソールログを確認してください。');
+      } finally {
+        button.disabled = false;
+        button.textContent = '自動優先度計算';
+      }
+    });
     headerSpace.appendChild(button);
 
     return event;
   });
 
 })(kintone.$PLUGIN_ID);
+
+function createModal() {
+  const modal = document.createElement('div');
+  modal.id = 'priority-modal';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <h2>優先度の高い記録</h2>
+      <div id="priority-records"></div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const closeBtn = modal.querySelector('.close');
+  closeBtn.onclick = () => {
+    modal.style.display = 'none';
+  };
+
+  window.onclick = (event) => {
+    if (event.target === modal) {
+      modal.style.display = 'none';
+    }
+  };
+
+  return modal;
+}
+
+function displayPriorityRecords(priorityRecords) {
+  const modal = document.getElementById('priority-modal') || createModal();
+  const recordsContainer = modal.querySelector('#priority-records');
+  recordsContainer.innerHTML = '';
+
+  const appId = kintone.app.getId();
+  const baseUrl = `${location.origin}/k/${appId}/show#record=`;
+
+  priorityRecords.forEach(item => {
+    const recordDiv = document.createElement('div');
+    recordDiv.innerHTML = `
+      <h3>優先度: ${item.record.priority}</h3>
+      <p><strong>記録 ID:</strong> <a href="${baseUrl}${item.record.id}" target="_blank">${item.record.id}</a></p>
+      <p><strong>理由:</strong> ${item.record.reason}</p>
+      <hr>
+    `;
+    recordsContainer.appendChild(recordDiv);
+  });
+
+  modal.style.display = 'block';
+}
+
+const modalStyle = document.createElement('style');
+modalStyle.textContent = `
+  #priority-modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.4);
+  }
+  .modal-content {
+    background-color: #fefefe;
+    margin: 15% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 600px;
+  }
+  .close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .close:hover,
+  .close:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+  }
+`;
+document.head.appendChild(modalStyle);
