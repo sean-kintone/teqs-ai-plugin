@@ -30,6 +30,10 @@
     "en": "test",
     "ja": "test"
   },
+  "homepage_url": {
+    "en": "https://test.com",
+    "ja": "https://test.com"
+  },
   "description": {
     "en": "test",
     "ja": "test"
