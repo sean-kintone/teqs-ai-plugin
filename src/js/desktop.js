@@ -1,6 +1,5 @@
 (function (PLUGIN_ID) {
   'use strict';
-
   // プラグイン設定からAPIキーを取得
   async function calculateSentiment(records) {
     const filteredRecords = records.filter(record => record.Status.value !== "完了");
@@ -139,39 +138,3 @@ function displayPriorityRecords(priorityRecords) {
 
   modal.style.display = 'block';
 }
-
-const modalStyle = document.createElement('style');
-modalStyle.textContent = `
-  #priority-modal {
-    display: none;
-    position: fixed;
-    z-index: 1000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0,0,0,0.4);
-  }
-  .modal-content {
-    background-color: #fefefe;
-    margin: 15% auto;
-    padding: 20px;
-    border: 1px solid #888;
-    width: 80%;
-    max-width: 600px;
-  }
-  .close {
-    color: #aaa;
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
-    cursor: pointer;
-  }
-  .close:hover,
-  .close:focus {
-    color: black;
-    text-decoration: none;
-    cursor: pointer;
-  }
-`;
-document.head.appendChild(modalStyle);

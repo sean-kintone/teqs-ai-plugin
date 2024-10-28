@@ -14,13 +14,16 @@
 
   formEl.addEventListener('submit', (e) => {
     e.preventDefault();
-    const openAIToken = openAITokenEl.value;
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${openAIToken}`
-    };
-    kintone.plugin.app.setProxyConfig('https://api.openai.com/v1/chat/completions', 'POST', headers, {});
-    alert('設定が保存されました。アプリを更新してください。');
+    kintone.plugin.app.setConfig({ openAIToken: openAITokenEl.value }, () => {
+      const openAIToken = openAITokenEl.value;
+      console.log(openAIToken)
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${openAIToken}`
+      };
+      kintone.plugin.app.setProxyConfig('https://api.openai.com/v1/chat/completions', 'POST', headers, {});
+      alert('設定が保存されました。アプリを更新してください。');
+    })
     window.location.href = '../../flow?app=' + kintone.app.getId();
   });
 
