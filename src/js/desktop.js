@@ -3,8 +3,6 @@
 
   async function calculateSentiment(records) {
     // プラグイン設定からAPIキーを取得
-    const config = kintone.plugin.app.getConfig(PLUGIN_ID);
-    const openAIToken = config.openAIToken;
     const filteredRecords = records.filter(record => record.Status.value !== "完了");
     const processedRecords = filteredRecords.map(record => ({
       id: record.$id.value,
