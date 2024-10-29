@@ -1,7 +1,10 @@
 (function (PLUGIN_ID) {
   'use strict';
-  // プラグイン設定からAPIキーを取得
+
   async function calculateSentiment(records) {
+    // プラグイン設定からAPIキーを取得
+    const config = kintone.plugin.app.getConfig(PLUGIN_ID);
+    const openAIToken = config.openAIToken;
     const filteredRecords = records.filter(record => record.Status.value !== "完了");
     const processedRecords = filteredRecords.map(record => ({
       id: record.$id.value,
@@ -10,21 +13,20 @@
     }));
 
     const prompt = `以下の顧客サポート記録を分析し、優先度の高い上位3件を選んでください。各記録の重要性、緊急性、潜在的な影響を考慮してください。
-  回答は、以下のJSONオブジェクトの配列形式で提供してください：
-  records: [
-    {
-      "record": {
-        "id": number,
-        "priority": number,
-        "reason": string
-      }
-    },
-    ...
-  ]
-  priorityは1（最高）から3の数値で表してください。reasonは選択した理由を簡潔に説明してください。
-  以下が分析対象の記録です：
-  ${JSON.stringify(processedRecords, null, 2)}`;
-
+    回答は、以下のJSONオブジェクトの配列形式で提供してください：
+    records: [
+      {
+        "record": {
+          "id": number,
+          "priority": number,
+          "reason": string
+        }
+      },
+      ...
+    ]
+    priorityは1（最高）から3の数値で表してください。reasonは選択した理由を簡潔に説明してください。
+    以下が分析対象の記録です：
+    ${JSON.stringify(processedRecords, null, 2)}`;
     const body = {
       model: "gpt-3.5-turbo-0125",
       messages: [
@@ -39,7 +41,6 @@
       ],
       response_format: { type: "json_object" }
     };
-
     try {
       const response = await kintone.plugin.app.proxy(PLUGIN_ID, 'https://api.openai.com/v1/chat/completions', 'POST', {}, JSON.stringify(body));
       const parsedResponse = JSON.parse(response[0]);
@@ -47,11 +48,31 @@
       const content = JSON.parse(parsedResponse.choices[0].message.content);
       console.log(content)
       return content.records;
-
     } catch (error) {
       console.error('Error calling OpenAI API:', error);
       return [];
     }
+  }
+
+  function displayPriorityRecords(priorityRecords) {
+    const modal = document.getElementById('priority-modal') || createModal();
+    const recordsContainer = modal.querySelector('#priority-records');
+    recordsContainer.innerHTML = '';
+    const appId = kintone.app.getId();
+    const baseUrl = `${location.origin}/k/${appId}/show#record=`;
+
+    priorityRecords.forEach(item => {
+      const recordDiv = document.createElement('div');
+      recordDiv.innerHTML = `
+        <h3>優先度: ${item.record.priority}</h3>
+        <p><strong>記録 ID:</strong> <a href="${baseUrl}${item.record.id}" target="_blank">${item.record.id}</a></p>
+        <p><strong>理由:</strong> ${item.record.reason}</p>
+        <hr>
+      `;
+      recordsContainer.appendChild(recordDiv);
+    });
+
+    modal.style.display = 'block';
   }
 
   kintone.events.on('app.record.index.show', (event) => {
@@ -59,19 +80,17 @@
     if (headerSpace === null) {
       throw new Error('このページでヘッダー要素が利用できません。');
     }
-
     const button = document.createElement('button');
     button.id = 'auto-priority-button';
     button.textContent = '自動優先度計算';
     button.style.marginTop = '10px';
     button.addEventListener('click', async () => {
-      button.disabled = true;
-      button.textContent = '計算中...';
+      console.log("ボタンはクリックされました。")
       try {
         const priorityRecords = await calculateSentiment(event.records);
         console.log('Prioritized records:', priorityRecords);
         if (priorityRecords.length > 0) {
-          displayPriorityRecords(priorityRecords);
+          displayPriorityRecords(priorityRecords)
         } else {
           alert('優先度の計算結果が得られませんでした。ログを確認してください。');
         }
@@ -84,7 +103,6 @@
       }
     });
     headerSpace.appendChild(button);
-
     return event;
   });
 
@@ -93,7 +111,7 @@
 function createModal() {
   const modal = document.createElement('div');
   modal.id = 'priority-modal';
-  modal.style.display = 'none';
+  modal.style.display = 'block';
   modal.innerHTML = `
     <div class="modal-content">
       <span class="close">&times;</span>
@@ -115,26 +133,4 @@ function createModal() {
   };
 
   return modal;
-}
-
-function displayPriorityRecords(priorityRecords) {
-  const modal = document.getElementById('priority-modal') || createModal();
-  const recordsContainer = modal.querySelector('#priority-records');
-  recordsContainer.innerHTML = '';
-
-  const appId = kintone.app.getId();
-  const baseUrl = `${location.origin}/k/${appId}/show#record=`;
-
-  priorityRecords.forEach(item => {
-    const recordDiv = document.createElement('div');
-    recordDiv.innerHTML = `
-      <h3>優先度: ${item.record.priority}</h3>
-      <p><strong>記録 ID:</strong> <a href="${baseUrl}${item.record.id}" target="_blank">${item.record.id}</a></p>
-      <p><strong>理由:</strong> ${item.record.reason}</p>
-      <hr>
-    `;
-    recordsContainer.appendChild(recordDiv);
-  });
-
-  modal.style.display = 'block';
 }
