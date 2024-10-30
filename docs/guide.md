@@ -52,7 +52,7 @@ kintone開発者ライセンスは、開発者がkintone APIを無料で試せ�
 
 ### envファイルを使用してアップしましょう
 
-`npm install dotenv`
+`npm install dotenv-cli`
 
 `touch .env`
 
